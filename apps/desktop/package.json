@@ -283,7 +283,7 @@
         "nsis",
         "msi"
       ],
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "linux": {
       "category": "Development",

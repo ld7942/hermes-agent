@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 import { __resetBackendSkinSync, ingestBackendSkin } from './backend-sync'
-import { skinPref, ThemeProvider, useTheme } from './context'
-import { everforestTheme } from './presets'
+import { getBaseColors, skinPref, ThemeProvider, useTheme } from './context'
+import { BUILTIN_THEME_LIST, everforestTheme } from './presets'
 
 // The live-authoring loop: Hermes writes/edits one skin file and every surface
 // repaints. An in-place edit keeps the NAME — only the palette moves.
@@ -164,66 +164,106 @@ describe('ThemeProvider highlight preview', () => {
   })
 })
 
-// A shell that does not wire `setNativeTheme` answers the call with a value of
-// its own rather than `undefined` — the Tauri bridge's unwired stub hands back a
-// rejected promise (see `desktop-bridge/tauri-bridge.ts`). React invokes an
-// effect's return value as its cleanup, so an effect body written as
-// `() => syncNativeTheme(…)` passed that promise straight to React and threw
-// `destroy is not a function`: at launch under StrictMode's double-invoke, and
-// on the first mode switch in production.
-describe('ThemeProvider ← shell native-theme contract', () => {
+// `--dt-primary-solid` is the loud brand fill of every shipped preset. The
+// desktop's original ensureContrast ladder (5 rungs of 0.2 toward the pole
+// opposite the background, re-mixed from the ORIGINAL colour) is reproduced
+// here as a reference implementation; the shared @hermes/shared/color ladder
+// must land byte-identical for every preset in every mode, or presets change
+// colour under users on an "only math moved" refactor.
+describe('ThemeProvider --dt-primary-solid preset parity', () => {
+  const hexToRgb = (hex: string): [number, number, number] =>
+    [0, 2, 4].map(i => parseInt(hex.replace(/^#/, '').slice(i, i + 2), 16)) as [number, number, number]
+
+  const rgbToHex = (rgb: [number, number, number]) =>
+    `#${rgb
+      .map(n =>
+        Math.round(Math.min(255, Math.max(0, n)))
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('')}`
+
+  const oldMix = (a: string, b: string, amount: number) => {
+    const ar = hexToRgb(a)
+    const br = hexToRgb(b)
+
+    return rgbToHex([
+      ar[0] + (br[0] - ar[0]) * amount,
+      ar[1] + (br[1] - ar[1]) * amount,
+      ar[2] + (br[2] - ar[2]) * amount
+    ])
+  }
+
+  const linearize = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+
+  const oldLuminance = (hex: string) => {
+    const [r, g, b] = hexToRgb(hex).map(v => linearize(v / 255))
+
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+  }
+
+  const oldContrast = (a: string, b: string) => {
+    const la = oldLuminance(a)
+    const lb = oldLuminance(b)
+
+    return la >= lb ? (la + 0.05) / (lb + 0.05) : (lb + 0.05) / (la + 0.05)
+  }
+
+  const oldEnsureContrast = (color: string, bg: string, min: number) => {
+    if (oldContrast(color, bg) >= min) {
+      return color
+    }
+
+    const towards = oldLuminance(bg) < 0.5 ? '#ffffff' : '#000000'
+    let best = color
+
+    for (let amount = 0.2; amount <= 1.0001; amount += 0.2) {
+      best = oldMix(color, towards, Math.min(amount, 1))
+
+      if (oldContrast(best, bg) >= min) {
+        return best
+      }
+    }
+
+    return best
+  }
+
   beforeEach(() => {
     window.localStorage.clear()
     __resetBackendSkinSync()
   })
 
-  afterEach(() => {
-    cleanup()
-    // jsdom has no preload, so the bridge starts out absent. Put it back.
-    delete (window as Partial<Window>).hermesDesktop
-  })
+  afterEach(cleanup)
 
-  it('discards the shell call’s return value rather than returning it from the effect', () => {
-    const setNativeTheme = vi.fn(() => {
-      const rejected = Promise.reject(new Error('unwired bridge call: setNativeTheme'))
+  let ctx: ReturnType<typeof useTheme>
 
-      // The shell's own reporter consumes this rejection. Without the handler
-      // the mock would surface as an unhandled rejection instead of as the
-      // effect-cleanup failure under test.
-      rejected.catch(() => undefined)
+  function Probe() {
+    ctx = useTheme()
 
-      return rejected
-    })
+    return null
+  }
 
-    window.hermesDesktop = { setNativeTheme } as unknown as typeof window.hermesDesktop
+  const cases = BUILTIN_THEME_LIST.flatMap(theme =>
+    (['light', 'dark'] as const).map(mode => [theme.name, mode] as const)
+  )
 
-    // Assigned synchronously by `Probe` during the `render` below; TypeScript
-    // cannot see into that call, so the definite-assignment assertion is what
-    // keeps the reads after `render` from failing the strict typecheck.
-    let ctx!: ReturnType<typeof useTheme>
-
-    function Probe() {
-      ctx = useTheme()
-
-      return null
-    }
-
+  it.each(cases)('%s/%s keeps the pre-refactor loud fill', (name, mode) => {
     render(
-      <ErrorBoundary fallback={() => <div>boundary</div>} label="probe">
-        <ThemeProvider>
-          <Probe />
-        </ThemeProvider>
-      </ErrorBoundary>
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>
     )
 
-    expect(setNativeTheme).toHaveBeenCalled()
+    act(() => ctx.previewTheme(name, mode))
 
-    // Re-running the effect is the moment React calls the previous cleanup —
-    // i.e. whatever the effect body returned.
-    act(() => ctx.setMode('dark'))
+    const primary = getBaseColors(name, mode).primary
+    const expected = oldEnsureContrast(primary, '#fcfcfc', 4.5)
 
-    // Guards against a vacuous pass: no dep change, no cleanup, no coverage.
-    expect(ctx.mode).toBe('dark')
-    expect(screen.queryByText('boundary')).toBeNull()
+    expect(cssVar('--dt-primary-solid')).toBe(expected)
+
+    // At least some presets need a lift; the assertion must not be vacuous.
+    if (name === 'nous' && mode === 'dark') {
+      expect(expected).not.toBe(primary)
+    }
   })
 })

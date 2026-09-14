@@ -114,5 +114,26 @@ export function desktopGit(): GitBridge | undefined {
     return undefined
   }
 
-  return isDesktopFsRemoteMode() ? remoteGit : window.hermesDesktop?.git
+  if (isDesktopFsRemoteMode()) {
+    return remoteGit
+  }
+
+  const git = window.hermesDesktop?.git
+
+  if (git) {
+    return git
+  }
+
+  // Electron's main process is the only *local* git executor. A shell that
+  // cannot run git itself — the Tauri build, where the bridge answers `undefined`
+  // for `git` — still has the backend's own /api/git mirror: the route remote
+  // mode already uses, and for a local connection the same machine's repo the
+  // sessions run in. Falling back turns the coding rail, the worktree lanes and
+  // the review pane from a bridge error apiece into working features.
+  //
+  // The fallback is gated on the bridge *existing*: when there is no
+  // `window.hermesDesktop` at all (plain-browser dev, or a test simulating the
+  // absent preload), `undefined` stays the honest answer — "no local git" —
+  // which is exactly the signal `reviewCtx` / `refreshRepoStatus` bail on.
+  return window.hermesDesktop ? remoteGit : undefined
 }

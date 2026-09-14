@@ -232,6 +232,14 @@ export async function switchProfile(name: string): Promise<void> {
     return
   }
 
+  // Switching is main-process work — rewrite the launch argv, then reload the
+  // window. A shell that cannot do it (the Tauri build, where `profile` answers
+  // `undefined`) must not leave a pill showing a profile the running backend does
+  // not back, so the selection is left alone instead.
+  if (typeof window.hermesDesktop?.profile?.set !== 'function') {
+    return
+  }
+
   setActiveProfile(name)
   await window.hermesDesktop.profile.set(name)
 }

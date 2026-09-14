@@ -58,6 +58,24 @@ describe('desktop git facade', () => {
     expect(api).not.toHaveBeenCalled()
   })
 
+  // The Tauri shell has no native git executor — the bridge exists but answers
+  // `undefined` for `git` — so a local connection falls back to the backend's
+  // own REST mirror. Absence of the whole bridge (`window.hermesDesktop`
+  // undefined) must stay `undefined`, not silently become the mirror: that is
+  // the "no local git" signal the review pane and repo-status refresh bail on.
+  it('falls back to the REST mirror when a shell exists without native git, and to undefined with no shell', async () => {
+    $connection.set({ mode: 'local' } as never)
+
+    vi.stubGlobal('window', { hermesDesktop: { api } })
+
+    await expect(desktopGit()?.repoStatus('/srv/work')).resolves.toEqual({ branch: 'remote-main' })
+    expect(api).toHaveBeenCalledWith({ path: '/api/git/status?path=%2Fsrv%2Fwork' })
+
+    vi.stubGlobal('window', {})
+
+    expect(desktopGit()).toBeUndefined()
+  })
+
   it('routes reads through the backend REST mirror on a remote gateway', async () => {
     $connection.set({ mode: 'remote' } as never)
 

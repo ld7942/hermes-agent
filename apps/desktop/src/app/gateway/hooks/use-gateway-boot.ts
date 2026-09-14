@@ -726,9 +726,19 @@ export function useGatewayBoot({
       applyDesktopBootProgress(payload)
     })
 
-    void desktop
-      .getBootProgress()
-      .then(snapshot => applyDesktopBootProgress(snapshot))
+    // Read through an optional call and funnel through `Promise.resolve`: this is
+    // the boot contract, and a shell that cannot answer must leave the renderer's
+    // own steps alone rather than take the window down at mount. A bare
+    // `desktop.getBootProgress()` throws *synchronously* from an effect when the
+    // method is missing, and React hands effect errors to the root boundary — so
+    // the app never renders at all. That is exactly how the Tauri shell broke
+    // when the method was declared unimplemented instead of answered.
+    void Promise.resolve(desktop.getBootProgress?.())
+      .then(snapshot => {
+        if (snapshot) {
+          applyDesktopBootProgress(snapshot)
+        }
+      })
       .catch(() => undefined)
 
     setDesktopBootStep({

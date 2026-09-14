@@ -64,6 +64,10 @@ cd apps/desktop
 npm run dev          # Vite renderer + Electron, which boots the Python backend
 ```
 
+The app is mid-migration to a Tauri (Rust) shell. To build and run that instead,
+see [`src-tauri/README.md`](./src-tauri/README.md) — it documents the Tauri
+prerequisites, backend resolution, environment variables, and startup sequence.
+
 Point the app at a specific source checkout, or sandbox it away from your real config:
 
 ```bash

@@ -1,0 +1,81 @@
+[package]
+name = "hermes-desktop"
+version = "0.17.2"
+description = "Native desktop shell for Hermes Agent (Tauri)."
+authors = ["Nous Research <support@nousresearch.com>"]
+edition = "2021"
+rust-version = "1.77"
+
+# Match the Electron shell's artifact name: what the user sees on disk is
+# `Hermes`, not `hermes-desktop`. Tauri honors [[bin]] over [package].name for
+# the produced executable, and `mainBinaryName` in tauri.conf.json keeps the
+# bundle consistent with it.
+[[bin]]
+name = "Hermes"
+path = "src/main.rs"
+
+[lib]
+name = "hermes_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-os = "2"
+tauri-plugin-single-instance = "2"
+
+# Async + IO
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP — rustls so the build box needs no OpenSSL. Same choice the bootstrap
+# installer makes.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "stream",
+    "gzip",
+] }
+
+# Terminal PTY — the Tauri replacement for node-pty.
+portable-pty = "0.8"
+
+# Paths + misc
+dirs = "5"
+once_cell = "1"
+anyhow = "1"
+thiserror = "1"
+uuid = { version = "1", features = ["v4"] }
+
+# Logging — desktop.log, mirroring hermes_logging.py's layout.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Window-below enumeration and process-tree teardown on Windows, plus the
+# execution-state and battery queries behind keep-awake and the on-battery hint.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Power",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

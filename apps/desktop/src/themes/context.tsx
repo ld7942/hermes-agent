@@ -315,8 +315,16 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
 // (macOS vibrancy material, titlebar, pre-paint background) matches the app
 // theme instead of the OS appearance. An explicit light/dark pick is forced;
 // 'system' stays 'system' so prefers-color-scheme keeps tracking the OS.
-const syncNativeTheme = (pref: ThemeMode, rendered: 'light' | 'dark') =>
-  window.hermesDesktop?.setNativeTheme?.(pref === 'system' ? 'system' : rendered)
+// Returns nothing on purpose. `setNativeTheme` is fire-and-forget in the preload
+// (`ipcRenderer.send`), so it answers `undefined` there — but a shell that does
+// not wire the call answers with a value of its own. An effect written as
+// `() => syncNativeTheme(…)` would then implicitly return that value, and React
+// invokes an effect's return as its cleanup: a non-function throws
+// `destroy is not a function` and trips the root boundary. Discarding here keeps
+// the contract true for every call site, present and future.
+const syncNativeTheme = (pref: ThemeMode, rendered: 'light' | 'dark'): void => {
+  void window.hermesDesktop?.setNativeTheme?.(pref === 'system' ? 'system' : rendered)
+}
 
 // Boot-time paint to avoid a flash before <ThemeProvider> mounts. Use the last
 // active profile's appearance so a non-default profile relaunch paints its own
@@ -476,11 +484,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // What actually gets painted (matches the `.dark` class applyTheme toggles).
   const renderedMode = useMemo(() => renderedModeFor(paintedTheme.colors, paintedMode), [paintedTheme, paintedMode])
 
-  useEffect(() => applyTheme(paintedTheme, paintedMode), [paintedTheme, paintedMode])
+  // Both effects are blocks on purpose. A `() => fn()` body implicitly returns
+  // fn's value, and React invokes an effect's return as its cleanup — so these
+  // must never hand React anything back from the shell call.
+  useEffect(() => {
+    applyTheme(paintedTheme, paintedMode)
+  }, [paintedTheme, paintedMode])
 
   // Keep the native window appearance pinned to the app theme (vibrancy
   // material, titlebar, new-window pre-paint background).
-  useEffect(() => syncNativeTheme(mode, renderedMode), [mode, renderedMode])
+  useEffect(() => {
+    syncNativeTheme(mode, renderedMode)
+  }, [mode, renderedMode])
 
   // Assign to whichever profile is live right now (read fresh so the callbacks
   // stay stable across profile switches).

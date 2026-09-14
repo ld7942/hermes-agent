@@ -1,3 +1,7 @@
+// Side-effect: installs `window.hermesDesktop` when running under Tauri. Must
+// precede every other import — components read the bridge during module init.
+// A no-op under Electron, where the preload already installed it.
+import './desktop-bridge'
 import './styles.css'
 // Side-effect: reports in-flight turns to the main process for the quit guard.
 import './store/active-work'
@@ -16,7 +20,7 @@ import './store/user-bubble-transparency'
 import '@/debug/dev-only'
 
 import { QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router'
 
@@ -45,6 +49,35 @@ if (import.meta.env.MODE !== 'production' || import.meta.env.VITE_PERF_PROBE ===
   import('./app/chat/perf-probe')
 }
 
+/**
+ * The main window is created hidden (`visible: false` in `tauri.conf.json`) so
+ * nobody ever sees an unpainted webview, which leaves showing it to the
+ * renderer — the only side that knows when there is something worth showing.
+ * That moment is this mount: `showMainWindow` → `hermes_window_ready` shows and
+ * focuses the window.
+ *
+ * A sibling of `RootErrorBoundary` rather than a descendant, so a render error
+ * below still reveals the window displaying the boundary's fallback instead of
+ * leaving the user with an invisible process and nothing to look at.
+ *
+ * Tauri-only: the Electron shell shows its own window, so `showMainWindow` is
+ * absent from the preload surface `global.d.ts` declares — hence the cast. The
+ * capability is probed by calling it, matching the bridge's rule that a feature
+ * is asked about by asking whether the function exists; plain-browser dev has
+ * no bridge at all and falls through the optional chain.
+ */
+function ShowMainWindowOnMount() {
+  useEffect(() => {
+    const bridge = window.hermesDesktop as unknown as
+      | { showMainWindow?: () => Promise<unknown> }
+      | undefined
+
+    void bridge?.showMainWindow?.()
+  }, [])
+
+  return null
+}
+
 const winParam = new URLSearchParams(window.location.search).get('win')
 
 if (winParam === 'hud') {
@@ -65,6 +98,7 @@ if (winParam === 'overlay') {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
+      <ShowMainWindowOnMount />
       <RootErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <I18nProvider>

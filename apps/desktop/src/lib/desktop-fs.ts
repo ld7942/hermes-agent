@@ -108,8 +108,16 @@ export async function writeDesktopFileText(path: string, content: string): Promi
 }
 
 export async function readDesktopFileDataUrl(path: string): Promise<string> {
-  if (!isDesktopFsRemoteMode()) {
-    return bridge().readFileDataUrl(path)
+  // Local reads prefer the Electron main process, which reads this machine's own
+  // disk. A shell that cannot serve the call — the Tauri build, where
+  // `readFileDataUrl` is absent rather than a stub — falls through to the
+  // backend's own /api/fs/read-data-url: the route remote mode already uses, and
+  // for a local connection the same machine's bytes. Without that fallback the
+  // read throws where a preview expects the empty string meaning "unreadable".
+  const local = isDesktopFsRemoteMode() ? null : bridge()
+
+  if (local?.readFileDataUrl) {
+    return local.readFileDataUrl(path)
   }
 
   const result = await remoteFsApi<string | { dataUrl?: string }>(fsPath('read-data-url', path))

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Hermes",
+  "mainBinaryName": "Hermes",
+  "version": "0.17.2",
+  "identifier": "com.nousresearch.hermes",
+  "build": {
+    "beforeDevCommand": "npm run dev:renderer",
+    "devUrl": "http://127.0.0.1:5174",
+    "beforeBuildCommand": "npm run build:renderer",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Hermes",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 680,
+        "minHeight": 480,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "center": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:* ws://localhost:* https: wss:; media-src 'self' blob: data:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["**"],
+          "deny": []
+        }
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "shortDescription": "Native desktop shell for Hermes Agent.",
+    "longDescription": "Hermes is a personal AI agent. This desktop shell drives a locally managed Hermes backend, the Hermes gateway, terminals, and the workspace — the same renderer the Electron shell ships.",
+    "publisher": "Nous Research",
+    "copyright": "Copyright © 2026 Nous Research",
+    "targets": [
+      "dmg",
+      "app",
+      "nsis",
+      "msi",
+      "appimage",
+      "deb",
+      "rpm"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "resources": [
+      "../build/install-stamp.json"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}

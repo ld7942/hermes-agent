@@ -300,7 +300,18 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
 
     const desktop = window.hermesDesktop
 
-    if (!desktop || typeof desktop.onBootstrapEvent !== 'function') {
+    // Probe the two methods this effect actually calls. It used to probe
+    // `onBootstrapEvent` alone — which the bridge answers with a function on
+    // whatever shell it runs under, since an unwired subscription is a no-op —
+    // so the guard passed on a shell with no installer state at all, and the read
+    // below threw a TypeError straight out of the effect. React hands that to the
+    // root error boundary, so the overlay's absence took the whole window with
+    // it. A capability guard is only worth what it names.
+    if (
+      !desktop ||
+      typeof desktop.getBootstrapState !== 'function' ||
+      typeof desktop.onBootstrapEvent !== 'function'
+    ) {
       return
     }
 

@@ -1,5 +1,7 @@
-import { act, cleanup, render } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act, cleanup, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { ErrorBoundary } from '@/components/error-boundary'
 
 import { __resetBackendSkinSync, ingestBackendSkin } from './backend-sync'
 import { skinPref, ThemeProvider, useTheme } from './context'
@@ -159,5 +161,69 @@ describe('ThemeProvider highlight preview', () => {
 
     act(() => ctx.previewTheme('does-not-exist', 'dark'))
     expect(cssVar('--theme-foreground')).toBe(painted)
+  })
+})
+
+// A shell that does not wire `setNativeTheme` answers the call with a value of
+// its own rather than `undefined` — the Tauri bridge's unwired stub hands back a
+// rejected promise (see `desktop-bridge/tauri-bridge.ts`). React invokes an
+// effect's return value as its cleanup, so an effect body written as
+// `() => syncNativeTheme(…)` passed that promise straight to React and threw
+// `destroy is not a function`: at launch under StrictMode's double-invoke, and
+// on the first mode switch in production.
+describe('ThemeProvider ← shell native-theme contract', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    __resetBackendSkinSync()
+  })
+
+  afterEach(() => {
+    cleanup()
+    // jsdom has no preload, so the bridge starts out absent. Put it back.
+    delete (window as Partial<Window>).hermesDesktop
+  })
+
+  it('discards the shell call’s return value rather than returning it from the effect', () => {
+    const setNativeTheme = vi.fn(() => {
+      const rejected = Promise.reject(new Error('unwired bridge call: setNativeTheme'))
+
+      // The shell's own reporter consumes this rejection. Without the handler
+      // the mock would surface as an unhandled rejection instead of as the
+      // effect-cleanup failure under test.
+      rejected.catch(() => undefined)
+
+      return rejected
+    })
+
+    window.hermesDesktop = { setNativeTheme } as unknown as typeof window.hermesDesktop
+
+    // Assigned synchronously by `Probe` during the `render` below; TypeScript
+    // cannot see into that call, so the definite-assignment assertion is what
+    // keeps the reads after `render` from failing the strict typecheck.
+    let ctx!: ReturnType<typeof useTheme>
+
+    function Probe() {
+      ctx = useTheme()
+
+      return null
+    }
+
+    render(
+      <ErrorBoundary fallback={() => <div>boundary</div>} label="probe">
+        <ThemeProvider>
+          <Probe />
+        </ThemeProvider>
+      </ErrorBoundary>
+    )
+
+    expect(setNativeTheme).toHaveBeenCalled()
+
+    // Re-running the effect is the moment React calls the previous cleanup —
+    // i.e. whatever the effect body returned.
+    act(() => ctx.setMode('dark'))
+
+    // Guards against a vacuous pass: no dep change, no cleanup, no coverage.
+    expect(ctx.mode).toBe('dark')
+    expect(screen.queryByText('boundary')).toBeNull()
   })
 })

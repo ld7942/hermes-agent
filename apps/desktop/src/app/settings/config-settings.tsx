@@ -121,9 +121,12 @@ function ConfigSettingsInner({
   const savedDiscoverySignatureRef = useRef<string | undefined>(undefined)
   const [saveVersion, setSaveVersion] = useState(0)
 
-  // Seed the local draft once, the first time the shared record lands.
-  // Background refetches thereafter must not clobber in-progress edits.
-  const configSeeded = useRef(false)
+  // Seed the local draft whenever it is empty and the shared record is ready.
+  // `config === null` (not a one-shot ref) is the guard so a later reset — the
+  // boot-time `useOnProfileSwitch` firing when the gateway first publishes its
+  // profile — re-seeds instead of stranding the page on the skeleton forever.
+  // Background refetches must not clobber in-progress edits, and they don't:
+  // once `config` is non-null the guard is false and the effect no-ops.
   // Snapshot of the record as it was when the draft was seeded. Autosave
   // diffs the draft against this (not against disk) so a field the user
   // never touched — possibly changed out-of-band by `hermes config set`
@@ -136,20 +139,18 @@ function ConfigSettingsInner({
 
   // eslint-disable-next-line no-restricted-syntax -- legitimate non-atom ref write (see eslint rule comment)
   useEffect(() => {
-    if (loadedConfig && !configSeeded.current) {
-      configSeeded.current = true
+    if (loadedConfig && config === null) {
       configBaselineRef.current = loadedConfig
       savedDiscoverySignatureRef.current = repoDiscoveryPolicySignature(repoDiscoveryPolicyFromConfig(loadedConfig))
       setConfig(loadedConfig)
     }
-  }, [loadedConfig])
+  }, [loadedConfig, config])
 
   // A profile switch invalidates (but doesn't clear) the shared config query, so
   // the local draft would otherwise keep profile A's data and autosave it into
   // B. Drop the seed + draft (re-seeds from B's refetch) and zero saveVersion so
   // the pending debounced autosave is cancelled by its effect cleanup.
   useOnProfileSwitch(() => {
-    configSeeded.current = false
     configBaselineRef.current = null
     savedDiscoverySignatureRef.current = undefined
     setConfig(null)
